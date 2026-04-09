@@ -548,8 +548,8 @@
             const handleChange = (field, value) => setFormData({ ...formData, [field]: value });
             const handleSubmit = (e) => {
                 e.preventDefault();
-                onSave(formData);
                 if (showToast) showToast(project ? '✓ 已更新' : '✓ 项目已保存');
+                onSave(formData);
             };
 
             return (
