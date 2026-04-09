@@ -105,8 +105,7 @@
             .projects-grid { grid-template-columns: 1fr; }
             .weather-days { grid-template-columns: repeat(4, 1fr); }
         }
-        .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--accent-green); color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; font-size: 0.95rem; z-index: 9999; box-shadow: 0 4px 20px rgba(0,0,0,0.3); animation: slideIn 0.3s ease; }
-        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        #dom-toast { display:none; position: fixed; bottom: 2rem; right: 2rem; background: #3fb950; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; font-size: 0.95rem; z-index: 9999; box-shadow: 0 4px 20px rgba(0,0,0,0.4); transition: opacity 0.3s; }
     </style>
 </head>
 <body>
@@ -287,11 +286,9 @@
             const [editingProject, setEditingProject] = useState(null);
             const [filterTeam, setFilterTeam] = useState('all');
             const [filterStatus, setFilterStatus] = useState('all');
-            const [toast, setToast] = useState(null);
-
             const showToast = (msg) => {
-                setToast(msg);
-                setTimeout(() => setToast(null), 2000);
+                const el = document.getElementById('dom-toast');
+                if (el) { el.textContent = msg; el.style.display = 'block'; el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; setTimeout(() => { el.style.display = 'none'; }, 300); }, 2000); }
             };
 
             useEffect(() => {
@@ -372,6 +369,7 @@
                                 <button className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>📊 项目看板</button>
                                 <button className={`nav-tab ${activeTab === 'calendar' ? 'active' : ''}`} onClick={() => setActiveTab('calendar')}>📅 拖拽排期</button>
                                 <button className={`nav-tab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>🗺️ 项目地图</button>
+                                <button className={`nav-tab ${activeTab === 'crew' ? 'active' : ''}`} onClick={() => setActiveTab('crew')}>👷 人员管理</button>
                             </nav>
                         </div>
                     </header>
@@ -390,11 +388,12 @@
                         )}
                         {activeTab === 'calendar' && <CalendarView projects={projects} setProjects={setProjects} />}
                         {activeTab === 'map' && <MapView projects={projects} />}
+                        {activeTab === 'crew' && <CrewView />}
                     </main>
 
                     {showAddModal && <ProjectModal onClose={() => setShowAddModal(false)} onSave={(data) => { addProject(data); }} showToast={showToast} />}
                     {editingProject && <ProjectModal project={editingProject} onClose={() => setEditingProject(null)} onSave={(data) => { updateProject(data); }} showToast={showToast} />}
-                    {toast && <div className="toast">{toast}</div>}
+
                 </div>
             );
         }
@@ -794,7 +793,149 @@
             );
         }
 
+
+        function CrewView() {
+            const CREW_KEY = 'nsroofing_crew';
+            const loadCrew = () => { try { return JSON.parse(localStorage.getItem(CREW_KEY)) || { wang: [], si: [] }; } catch(e) { return { wang: [], si: [] }; } };
+            const saveCrew = (data) => localStorage.setItem(CREW_KEY, JSON.stringify(data));
+
+            const [crew, setCrew] = React.useState(loadCrew);
+            const [newName, setNewName] = React.useState('');
+            const [newRole, setNewRole] = React.useState('安装工');
+            const [newPhone, setNewPhone] = React.useState('');
+            const [addingTo, setAddingTo] = React.useState(null);
+            const [dragPerson, setDragPerson] = React.useState(null);
+            const [dragFrom, setDragFrom] = React.useState(null);
+
+            const updateCrew = (next) => { setCrew(next); saveCrew(next); };
+
+            const addPerson = (team) => {
+                if (!newName.trim()) return;
+                const person = { id: Date.now(), name: newName.trim(), role: newRole, phone: newPhone.trim() };
+                const next = { ...crew, [team]: [...crew[team], person] };
+                updateCrew(next);
+                setNewName(''); setNewPhone(''); setAddingTo(null);
+            };
+
+            const removePerson = (team, id) => {
+                const next = { ...crew, [team]: crew[team].filter(p => p.id !== id) };
+                updateCrew(next);
+            };
+
+            const setLeader = (team, id) => {
+                const next = { ...crew, [team]: crew[team].map(p => ({ ...p, isLeader: p.id === id })) };
+                updateCrew(next);
+            };
+
+            const handleDrop = (toTeam) => {
+                if (!dragPerson || dragFrom === toTeam) return;
+                const person = crew[dragFrom].find(p => p.id === dragPerson);
+                if (!person) return;
+                const next = {
+                    ...crew,
+                    [dragFrom]: crew[dragFrom].filter(p => p.id !== dragPerson),
+                    [toTeam]: [...crew[toTeam], { ...person, isLeader: false }]
+                };
+                updateCrew(next);
+                setDragPerson(null); setDragFrom(null);
+            };
+
+            const teamConfig = [
+                { key: 'wang', label: '王队', color: 'var(--accent-blue)', icon: '👷' },
+                { key: 'si',   label: '司队', color: 'var(--accent-purple)', icon: '🔧' },
+            ];
+
+            return (
+                <div>
+                    <h2 style={{marginBottom: '0.5rem'}}>👷 施工人员管理</h2>
+                    <p style={{color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.9rem'}}>可拖拽人员在队伍间调动，点击⭐设为队长</p>
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem'}}>
+                        {teamConfig.map(team => (
+                            <div key={team.key}
+                                style={{background: 'var(--bg-card)', border: '2px solid var(--border)', borderRadius: '12px', padding: '1.5rem', minHeight: '300px'}}
+                                onDragOver={e => e.preventDefault()}
+                                onDrop={() => handleDrop(team.key)}
+                            >
+                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.2rem', paddingBottom:'0.75rem', borderBottom:'2px solid', borderColor: team.color}}>
+                                    <span style={{fontSize:'1.2rem', fontWeight:'700', color: team.color}}>{team.icon} {team.label}</span>
+                                    <span style={{background:'var(--bg-tertiary)', borderRadius:'20px', padding:'0.2rem 0.75rem', fontSize:'0.85rem', color:'var(--text-muted)'}}>{crew[team.key].length} 人</span>
+                                </div>
+
+                                {crew[team.key].length === 0 && (
+                                    <div style={{textAlign:'center', color:'var(--text-muted)', padding:'2rem 0', fontSize:'0.9rem'}}>暂无人员，可从其他队拖入</div>
+                                )}
+
+                                {crew[team.key].map(person => (
+                                    <div key={person.id}
+                                        draggable
+                                        onDragStart={() => { setDragPerson(person.id); setDragFrom(team.key); }}
+                                        onDragEnd={() => { setDragPerson(null); setDragFrom(null); }}
+                                        style={{
+                                            background: dragPerson === person.id ? 'var(--bg-secondary)' : 'var(--bg-tertiary)',
+                                            border: `1px solid ${person.isLeader ? team.color : 'var(--border)'}`,
+                                            borderRadius:'8px', padding:'0.75rem 1rem',
+                                            marginBottom:'0.6rem', cursor:'grab',
+                                            display:'flex', alignItems:'center', gap:'0.75rem',
+                                            opacity: dragPerson === person.id ? 0.5 : 1,
+                                            transition:'all 0.2s'
+                                        }}
+                                    >
+                                        <span style={{fontSize:'1.3rem'}}>{person.isLeader ? '⭐' : '👤'}</span>
+                                        <div style={{flex:1}}>
+                                            <div style={{fontWeight:'600', fontSize:'0.95rem', display:'flex', alignItems:'center', gap:'0.5rem'}}>
+                                                {person.name}
+                                                {person.isLeader && <span style={{fontSize:'0.7rem', background: team.color, color:'white', borderRadius:'4px', padding:'0.1rem 0.4rem'}}>队长</span>}
+                                            </div>
+                                            <div style={{fontSize:'0.8rem', color:'var(--text-muted)', marginTop:'0.15rem'}}>
+                                                {person.role}{person.phone ? ' · ' + person.phone : ''}
+                                            </div>
+                                        </div>
+                                        <div style={{display:'flex', gap:'0.4rem'}}>
+                                            <button onClick={() => setLeader(team.key, person.id)}
+                                                title={person.isLeader ? '已是队长' : '设为队长'}
+                                                style={{background:'none', border:'none', cursor:'pointer', fontSize:'1.1rem', opacity: person.isLeader ? 1 : 0.4, transition:'opacity 0.2s'}}
+                                            >⭐</button>
+                                            <button onClick={() => removePerson(team.key, person.id)}
+                                                style={{background:'none', border:'none', cursor:'pointer', color:'var(--accent-red)', fontSize:'1.1rem'}}
+                                            >✕</button>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {addingTo === team.key ? (
+                                    <div style={{marginTop:'1rem', background:'var(--bg-secondary)', borderRadius:'8px', padding:'1rem', border:'1px solid var(--border)'}}>
+                                        <input placeholder="姓名 *" value={newName} onChange={e => setNewName(e.target.value)}
+                                            style={{width:'100%', marginBottom:'0.5rem', background:'var(--bg-tertiary)', border:'1px solid var(--border)', color:'var(--text-primary)', padding:'0.5rem 0.75rem', borderRadius:'6px', fontSize:'0.9rem'}} />
+                                        <select value={newRole} onChange={e => setNewRole(e.target.value)}
+                                            style={{width:'100%', marginBottom:'0.5rem', background:'var(--bg-tertiary)', border:'1px solid var(--border)', color:'var(--text-primary)', padding:'0.5rem 0.75rem', borderRadius:'6px', fontSize:'0.9rem'}}>
+                                            <option>安装工</option>
+                                            <option>队长</option>
+                                            <option>学徒</option>
+                                        </select>
+                                        <input placeholder="电话（可选）" value={newPhone} onChange={e => setNewPhone(e.target.value)}
+                                            style={{width:'100%', marginBottom:'0.75rem', background:'var(--bg-tertiary)', border:'1px solid var(--border)', color:'var(--text-primary)', padding:'0.5rem 0.75rem', borderRadius:'6px', fontSize:'0.9rem'}} />
+                                        <div style={{display:'flex', gap:'0.5rem'}}>
+                                            <button onClick={() => addPerson(team.key)}
+                                                style={{flex:1, background: team.color, color:'white', border:'none', borderRadius:'6px', padding:'0.5rem', fontWeight:'600', cursor:'pointer'}}>确认添加</button>
+                                            <button onClick={() => { setAddingTo(null); setNewName(''); setNewPhone(''); }}
+                                                style={{background:'var(--bg-tertiary)', color:'var(--text-primary)', border:'1px solid var(--border)', borderRadius:'6px', padding:'0.5rem 1rem', cursor:'pointer'}}>取消</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setAddingTo(team.key)}
+                                        style={{width:'100%', marginTop:'0.75rem', background:'transparent', border:`1px dashed ${team.color}`, color: team.color, borderRadius:'8px', padding:'0.6rem', fontSize:'0.9rem', cursor:'pointer', fontWeight:'600'}}>
+                                        ＋ 添加人员
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
         ReactDOM.render(<App />, document.getElementById('root'));
     </script>
+<div id="dom-toast"></div>
 </body>
 </html>
