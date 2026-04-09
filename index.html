@@ -123,7 +123,7 @@
         const DATA_VERSION_KEY = 'roofing_data_version';
         const CURRENT_DATA_VERSION = 'v20260408_54projects';
         const GEOCODE_CACHE_KEY = 'geocode_cache';
-        const WEATHER_CACHE_KEY = 'weather_cache_v2';
+        const WEATHER_CACHE_KEY = 'weather_cache_v3';
 
         const saveToLocalStorage = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         const loadFromLocalStorage = () => {
@@ -321,7 +321,6 @@
                     scheduled_date: null
                 };
                 setProjects([...projects, project]);
-                showToast('✓ 项目已保存');
                 setShowAddModal(false);
             };
 
@@ -330,7 +329,6 @@
                 setProjects(projects.map(p => p.id === updatedProject.id ? updated : p));
                 saveProjectToFirebase(updated);
                 setEditingProject(null);
-                showToast('✓ 已更新');
             };
 
             const deleteProject = (projectId) => {
@@ -394,8 +392,8 @@
                         {activeTab === 'map' && <MapView projects={projects} />}
                     </main>
 
-                    {showAddModal && <ProjectModal onClose={() => setShowAddModal(false)} onSave={addProject} />}
-                    {editingProject && <ProjectModal project={editingProject} onClose={() => setEditingProject(null)} onSave={updateProject} />}
+                    {showAddModal && <ProjectModal onClose={() => setShowAddModal(false)} onSave={(data) => { addProject(data); }} showToast={showToast} />}
+                    {editingProject && <ProjectModal project={editingProject} onClose={() => setEditingProject(null)} onSave={(data) => { updateProject(data); }} showToast={showToast} />}
                     {toast && <div className="toast">{toast}</div>}
                 </div>
             );
@@ -540,7 +538,7 @@
             );
         }
 
-        function ProjectModal({ project, onClose, onSave }) {
+        function ProjectModal({ project, onClose, onSave, showToast }) {
             const [formData, setFormData] = useState(project || {
                 team: '王队', duration: 1, contract_date: '', customer_preferred_time: '', address: '',
                 type: 'Shingle', brand: 'GAF/A', material_quantity: '', material_status: '未测量未定',
@@ -548,7 +546,11 @@
             });
 
             const handleChange = (field, value) => setFormData({ ...formData, [field]: value });
-            const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(formData);
+                if (showToast) showToast(project ? '✓ 已更新' : '✓ 项目已保存');
+            };
 
             return (
                 <div className="modal-overlay" onClick={onClose}>
