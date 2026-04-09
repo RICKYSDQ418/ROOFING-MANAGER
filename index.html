@@ -105,6 +105,8 @@
             .projects-grid { grid-template-columns: 1fr; }
             .weather-days { grid-template-columns: repeat(4, 1fr); }
         }
+        .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--accent-green); color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; font-size: 0.95rem; z-index: 9999; box-shadow: 0 4px 20px rgba(0,0,0,0.3); animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
 </head>
 <body>
@@ -217,19 +219,21 @@
 
                 const data = await response.json();
                 
-                // 处理返回数据 - 提取每天中午12点的预报
+                // 处理返回数据 - 按本地日期分组，每天取中午最近时段
                 const dailyForecasts = {};
                 data.list.forEach(item => {
                     const date = new Date(item.dt * 1000);
-                    const dateKey = date.toISOString().split('T')[0];
+                    // 用本地日期作为key，避免UTC和本地时区造成重复
+                    const localDateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
                     const hour = date.getHours();
-                    
-                    // 取每天中午12点的数据，或者如果没有就取第一个
-                    if (!dailyForecasts[dateKey] || hour === 12) {
+                    const existingHour = dailyForecasts[localDateKey] ? new Date(dailyForecasts[localDateKey].fullDate).getHours() : -1;
+                    // 优先取12点数据，否则取最接近12点的
+                    const betterHour = !dailyForecasts[localDateKey] || 
+                        Math.abs(hour - 12) < Math.abs(existingHour - 12);
+                    if (betterHour) {
                         const weatherId = item.weather[0].id;
-                        const isRain = weatherId >= 200 && weatherId < 700; // 雷暴、毛毛雨、雨、雪都算不适合施工
-                        
-                        dailyForecasts[dateKey] = {
+                        const isRain = weatherId >= 200 && weatherId < 700;
+                        dailyForecasts[localDateKey] = {
                             date: date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }),
                             fullDate: date,
                             temp: Math.round(item.main.temp),
@@ -283,6 +287,12 @@
             const [editingProject, setEditingProject] = useState(null);
             const [filterTeam, setFilterTeam] = useState('all');
             const [filterStatus, setFilterStatus] = useState('all');
+            const [toast, setToast] = useState(null);
+
+            const showToast = (msg) => {
+                setToast(msg);
+                setTimeout(() => setToast(null), 2000);
+            };
 
             useEffect(() => {
                 const savedVersion = localStorage.getItem(DATA_VERSION_KEY);
@@ -311,6 +321,7 @@
                     scheduled_date: null
                 };
                 setProjects([...projects, project]);
+                showToast('✓ 项目已保存');
                 setShowAddModal(false);
             };
 
@@ -319,6 +330,7 @@
                 setProjects(projects.map(p => p.id === updatedProject.id ? updated : p));
                 saveProjectToFirebase(updated);
                 setEditingProject(null);
+                showToast('✓ 已更新');
             };
 
             const deleteProject = (projectId) => {
@@ -384,6 +396,7 @@
 
                     {showAddModal && <ProjectModal onClose={() => setShowAddModal(false)} onSave={addProject} />}
                     {editingProject && <ProjectModal project={editingProject} onClose={() => setEditingProject(null)} onSave={updateProject} />}
+                    {toast && <div className="toast">{toast}</div>}
                 </div>
             );
         }
@@ -698,8 +711,19 @@
                                 ))}
                             </div>
 
-                            <div className="unscheduled-projects">
-                                <div style={{fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: 'var(--text-muted)'}}>📋 未排期项目</div>
+                            <div className="unscheduled-projects"
+                                onDragOver={(e) => { e.preventDefault(); }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (draggedProject && draggedProject.team === team) {
+                                        const updatedP = { ...draggedProject, scheduled_date: null };
+                                        setProjects(projects.map(p => p.id === draggedProject.id ? updatedP : p));
+                                        saveProjectToFirebase(updatedP);
+                                        setDraggedProject(null);
+                                    }
+                                }}
+                            >
+                                <div style={{fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: 'var(--text-muted)'}}>📋 未排期项目（可拖回此处）</div>
                                 <div className="unscheduled-grid">
                                     {getUnscheduledProjects(team).map(p => (
                                         <div 
