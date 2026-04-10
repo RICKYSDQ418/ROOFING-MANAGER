@@ -90,7 +90,16 @@
         .date-header { text-align: center; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 8px 8px 0 0; border: 1px solid var(--border); font-size: 0.875rem; font-weight: 600; }
         .date-slot { min-height: 150px; background: var(--bg-tertiary); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.5rem; }
         .date-slot.droppable { background: rgba(88, 166, 255, 0.1); border-color: var(--accent-blue); }
-        .schedule-project { background: var(--accent-blue); padding: 0.75rem; border-radius: 6px; font-size: 0.875rem; cursor: move; margin-bottom: 0.5rem; transition: all 0.3s ease; }
+        .schedule-project { background: var(--accent-blue); padding: 0.75rem; border-radius: 6px; font-size: 0.875rem; cursor: move; margin-bottom: 0.5rem; transition: all 0.3s ease; position: relative; }
+        .schedule-project .extend-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: col-resize; background: rgba(255,255,255,0.25); border-radius: 0 6px 6px 0; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; opacity: 0; transition: opacity 0.2s; }
+        .schedule-project:hover .extend-handle { opacity: 1; }
+        .cal-multiday { background: var(--accent-blue); border-radius: 6px; font-size: 0.8rem; padding: 0.4rem 0.6rem; margin-bottom: 0.3rem; cursor: move; position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cal-multiday.polaron { background: var(--accent-orange); }
+        .cal-multiday.ready { background: var(--accent-green); }
+        .cal-multiday.start { border-radius: 6px 0 0 6px; }
+        .cal-multiday.middle { border-radius: 0; margin-left: -1px; margin-right: -1px; opacity: 0.85; }
+        .cal-multiday.end { border-radius: 0 6px 6px 0; }
+        .cal-multiday.single { border-radius: 6px; }
         .schedule-project:hover { transform: scale(1.02); box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3); }
         .schedule-project.dragging { opacity: 0.5; }
         .schedule-project.polaron { background: var(--accent-orange); }
@@ -277,6 +286,32 @@
                 const statusPriority = { '可开工': 1, '待到货': 2, '待订货': 3, '待测量': 4 };
                 return (statusPriority[a.status] || 99) - (statusPriority[b.status] || 99);
             });
+        };
+
+        const exportMonthlyReport = (projects, month) => {
+            // month = 'YYYY-MM'
+            const rows = [];
+            projects.forEach(p => {
+                if (!p.scheduled_dates) return;
+                p.scheduled_dates.forEach(seg => {
+                    if (!seg.start) return;
+                    if (month && !seg.start.startsWith(month)) return;
+                    const days = seg.days || p.duration || 1;
+                    const workers = p.workers || 1;
+                    rows.push({
+                        项目ID: p.id, 队伍: p.team, 地址: p.address,
+                        类型: p.type, 品牌: p.brand,
+                        开始日期: seg.start, 工期天数: days, 施工人数: workers,
+                        人工天数合计: days * workers,
+                        材料状况: p.material_status, 备注: p.notes
+                    });
+                });
+            });
+            if (rows.length === 0) { alert('该月没有排期数据'); return; }
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, month || '全部');
+            XLSX.writeFile(wb, `排期报告_${month || '全部'}_${new Date().toISOString().split('T')[0]}.xlsx`);
         };
 
         const exportToExcel = (projects) => {
@@ -499,7 +534,7 @@
                     </div>
 
                     <div style={{fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem'}}>
-                        {project.type} / {project.brand} • {project.duration}天 • {project.area || 'N/A'} sq
+                        {project.type} / {project.brand} • {project.duration}天 • {project.workers ? project.workers+'人' : ''}{project.workers ? ' • ' : ''}{project.area || 'N/A'} sq
                     </div>
 
                     {project.notes && (
@@ -547,7 +582,7 @@
             const [formData, setFormData] = useState(project || {
                 team: '王队', duration: 1, contract_date: '', customer_preferred_time: '', address: '',
                 type: 'Shingle', brand: 'GAF/A', material_quantity: '', material_status: '未测量未定',
-                area: '', pitch: '', color: '', notes: '', is_polaron: false
+                area: '', pitch: '', color: '', notes: '', is_polaron: false, workers: 2
             });
 
             const handleChange = (field, value) => setFormData({ ...formData, [field]: value });
@@ -575,6 +610,10 @@
                                 <div className="form-group">
                                     <label className="form-label">工期(天)</label>
                                     <input className="form-input" type="number" step="0.5" value={formData.duration} onChange={(e) => handleChange('duration', parseFloat(e.target.value))} required />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">施工人数</label>
+                                    <input className="form-input" type="number" min="1" step="1" placeholder="人数" value={formData.workers || ''} onChange={(e) => handleChange('workers', parseInt(e.target.value) || '')} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">签约日期</label>
@@ -656,8 +695,11 @@
         function CalendarView({ projects, setProjects, teams }) {
             const [draggedProject, setDraggedProject] = useState(null);
             const [hoveredDate, setHoveredDate] = useState(null);
-            
-            const dates = Array.from({ length: 14 }, (_, i) => {
+            const [resizing, setResizing] = useState(null); // {projectId, segIdx, startX, origDays}
+            const [exportMonth, setExportMonth] = useState(() => { const d = new Date(); return d.toISOString().slice(0,7); });
+
+            // Show 21 days
+            const dates = Array.from({ length: 21 }, (_, i) => {
                 const date = new Date();
                 date.setDate(date.getDate() + i);
                 return {
@@ -667,26 +709,85 @@
                 };
             });
 
-            const handleDrop = (e, dateString) => {
-                e.preventDefault();
-                if (draggedProject) {
-                    const updatedP = { ...draggedProject, scheduled_date: dateString };
-                    setProjects(projects.map(p => p.id === draggedProject.id ? updatedP : p));
-                    saveProjectToFirebase(updatedP);
-                }
-                setDraggedProject(null);
-                setHoveredDate(null);
+            const addDays = (dateStr, n) => {
+                const d = new Date(dateStr);
+                d.setDate(d.getDate() + n);
+                return d.toISOString().split('T')[0];
             };
 
-            const getScheduledProjects = (team, dateString) => projects.filter(p => p.team === team && p.scheduled_date === dateString);
-            const getUnscheduledProjects = (team) => sortProjects(projects, team).filter(p => !p.scheduled_date);
+            // Get segments for a project that overlap a given date
+            const getSegsOnDate = (p, dateStr) => {
+                if (!p.scheduled_dates) return [];
+                return p.scheduled_dates.map((seg, i) => {
+                    if (!seg.start) return null;
+                    const days = seg.days || p.duration || 1;
+                    const end = addDays(seg.start, days - 1);
+                    if (dateStr >= seg.start && dateStr <= end) return { seg, i };
+                    return null;
+                }).filter(Boolean);
+            };
+
+            const isSegStart = (p, dateStr) => {
+                if (!p.scheduled_dates) return false;
+                return p.scheduled_dates.some(seg => seg.start === dateStr);
+            };
+
+            const handleDrop = (e, dateString, team) => {
+                e.preventDefault();
+                if (!draggedProject || draggedProject.team !== team) { setDraggedProject(null); setHoveredDate(null); return; }
+                const segs = draggedProject.scheduled_dates ? [...draggedProject.scheduled_dates] : [];
+                segs.push({ start: dateString, days: draggedProject.duration || 1 });
+                const updatedP = { ...draggedProject, scheduled_dates: segs, scheduled_date: dateString };
+                setProjects(projects.map(p => p.id === draggedProject.id ? updatedP : p));
+                saveProjectToFirebase(updatedP);
+                setDraggedProject(null); setHoveredDate(null);
+            };
+
+            const removeSeg = (projectId, segIdx) => {
+                const p = projects.find(x => x.id === projectId);
+                if (!p) return;
+                const segs = (p.scheduled_dates || []).filter((_, i) => i !== segIdx);
+                const updatedP = { ...p, scheduled_dates: segs, scheduled_date: segs.length > 0 ? segs[0].start : null };
+                setProjects(projects.map(x => x.id === projectId ? updatedP : x));
+                saveProjectToFirebase(updatedP);
+            };
+
+            const extendSeg = (projectId, segIdx, extraDays) => {
+                const p = projects.find(x => x.id === projectId);
+                if (!p || !p.scheduled_dates) return;
+                const segs = p.scheduled_dates.map((s, i) => i === segIdx ? { ...s, days: Math.max(1, (s.days || p.duration || 1) + extraDays) } : s);
+                const updatedP = { ...p, scheduled_dates: segs };
+                setProjects(projects.map(x => x.id === projectId ? updatedP : x));
+                saveProjectToFirebase(updatedP);
+            };
+
+            const handleDropToUnscheduled = (team) => {
+                if (!draggedProject || draggedProject.team !== team) return;
+                const updatedP = { ...draggedProject, scheduled_dates: [], scheduled_date: null };
+                setProjects(projects.map(p => p.id === draggedProject.id ? updatedP : p));
+                saveProjectToFirebase(updatedP);
+                setDraggedProject(null);
+            };
+
+            const getUnscheduledProjects = (team) => sortProjects(projects, team).filter(p => !p.scheduled_dates || p.scheduled_dates.length === 0);
+            const getScheduledProjects = (team) => projects.filter(p => p.team === team && p.scheduled_dates && p.scheduled_dates.length > 0);
 
             return (
                 <div className="calendar-container">
-                    <h2 style={{marginBottom: '1.5rem'}}>📅 拖拽排期日历</h2>
-                    <p style={{color: 'var(--text-muted)', marginBottom: '2rem'}}>💡 将下方项目拖到对应日期</p>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem', flexWrap:'wrap', gap:'1rem'}}>
+                        <div>
+                            <h2 style={{marginBottom:'0.25rem'}}>📅 拖拽排期日历</h2>
+                            <p style={{color:'var(--text-muted)', fontSize:'0.875rem'}}>💡 拖项目到日期排期 • 点 ✕ 删除某段 • 点 ＋ 延长一天</p>
+                        </div>
+                        <div style={{display:'flex', gap:'0.75rem', alignItems:'center'}}>
+                            <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)}
+                                style={{background:'var(--bg-tertiary)', border:'1px solid var(--border)', color:'var(--text-primary)', padding:'0.5rem 0.75rem', borderRadius:'8px', fontSize:'0.875rem'}} />
+                            <button className="btn btn-secondary" style={{fontSize:'0.875rem', padding:'0.5rem 1rem'}}
+                                onClick={() => exportMonthlyReport(projects, exportMonth)}>📥 导出月报</button>
+                        </div>
+                    </div>
 
-                    {(teams || []).map((teamObj, idx) => { const team = teamObj.label; return (
+                    {(teams || []).map((teamObj) => { const team = teamObj.label; return (
                         <div key={team} className="team-schedule">
                             <div className="team-header" style={{color: teamObj.color}}>
                                 {teamObj.icon} {team}排期
@@ -694,59 +795,100 @@
                             <div className="schedule-timeline">
                                 {dates.map(d => (
                                     <div key={d.dateString} className="timeline-date">
-                                        <div className="date-header">{d.display}<br/><span style={{fontSize: '0.75rem', opacity: 0.7}}>周{d.dayOfWeek}</span></div>
-                                        <div 
+                                        <div className="date-header" style={{background: d.date.getDay()===0||d.date.getDay()===6 ? 'rgba(248,81,73,0.15)':''}}>
+                                            {d.display}<br/>
+                                            <span style={{fontSize:'0.7rem', opacity:0.7}}>周{d.dayOfWeek}</span>
+                                        </div>
+                                        <div
                                             className={`date-slot ${hoveredDate === d.dateString && draggedProject?.team === team ? 'droppable' : ''}`}
+                                            style={{minHeight:'80px'}}
                                             onDragOver={(e) => { e.preventDefault(); setHoveredDate(d.dateString); }}
-                                            onDrop={(e) => handleDrop(e, d.dateString)}
+                                            onDrop={(e) => handleDrop(e, d.dateString, team)}
                                         >
-                                            {getScheduledProjects(team, d.dateString).map(p => (
-                                                <div 
-                                                    key={p.id}
-                                                    className={`schedule-project ${p.is_polaron ? 'polaron' : ''} ${p.status === '可开工' ? 'ready' : ''} ${draggedProject?.id === p.id ? 'dragging' : ''}`}
-                                                    draggable
-                                                    onDragStart={() => setDraggedProject(p)}
-                                                    onDragEnd={() => { setDraggedProject(null); setHoveredDate(null); }}
-                                                >
-                                                    <strong>#{p.id}</strong> {p.address.substring(0, 20)}...
-                                                    <div className="project-mini-info">{p.type} • {p.duration}天</div>
-                                                </div>
-                                            ))}
+                                            {getScheduledProjects(team).map(p => {
+                                                const hits = getSegsOnDate(p, d.dateString);
+                                                return hits.map(({ seg, i }) => {
+                                                    const days = seg.days || p.duration || 1;
+                                                    const isStart = seg.start === d.dateString;
+                                                    const isEnd = addDays(seg.start, days-1) === d.dateString;
+                                                    const cls = isStart && isEnd ? 'single' : isStart ? 'start' : isEnd ? 'end' : 'middle';
+                                                    return (
+                                                        <div key={`${p.id}-${i}`}
+                                                            className={`cal-multiday ${cls} ${p.is_polaron?'polaron':''} ${p.status==='可开工'?'ready':''}`}
+                                                            draggable={isStart}
+                                                            onDragStart={() => isStart && setDraggedProject(p)}
+                                                            onDragEnd={() => { setDraggedProject(null); setHoveredDate(null); }}
+                                                            title={`#${p.id} ${p.address}
+${days}天 ${p.workers||'?'}人`}
+                                                            style={{color:'white'}}
+                                                        >
+                                                            {isStart && (
+                                                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'0.25rem'}}>
+                                                                    <span style={{overflow:'hidden', textOverflow:'ellipsis', flex:1}}>
+                                                                        <strong>#{p.id}</strong> {p.address.substring(0,15)}…
+                                                                    </span>
+                                                                    <div style={{display:'flex', gap:'0.2rem', flexShrink:0}}>
+                                                                        <button onClick={(e)=>{e.stopPropagation(); extendSeg(p.id,i,1);}}
+                                                                            title="延长1天"
+                                                                            style={{background:'rgba(255,255,255,0.2)', border:'none', color:'white', borderRadius:'3px', padding:'0 4px', cursor:'pointer', fontSize:'0.7rem', lineHeight:'1.4'}}>＋</button>
+                                                                        <button onClick={(e)=>{e.stopPropagation(); extendSeg(p.id,i,-1);}}
+                                                                            title="缩短1天"
+                                                                            style={{background:'rgba(255,255,255,0.2)', border:'none', color:'white', borderRadius:'3px', padding:'0 4px', cursor:'pointer', fontSize:'0.7rem', lineHeight:'1.4'}}>－</button>
+                                                                        <button onClick={(e)=>{e.stopPropagation(); removeSeg(p.id,i);}}
+                                                                            title="删除此段排期"
+                                                                            style={{background:'rgba(248,81,73,0.5)', border:'none', color:'white', borderRadius:'3px', padding:'0 4px', cursor:'pointer', fontSize:'0.7rem', lineHeight:'1.4'}}>✕</button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {isStart && (
+                                                                <div style={{fontSize:'0.68rem', opacity:0.85, marginTop:'0.15rem'}}>
+                                                                    {days}天 {p.workers ? p.workers+'人' : ''}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                });
+                                            })}
                                         </div>
                                     </div>
                                 ))}
                             </div>
 
                             <div className="unscheduled-projects"
-                                onDragOver={(e) => { e.preventDefault(); }}
-                                onDrop={(e) => {
-                                    e.preventDefault();
-                                    if (draggedProject && draggedProject.team === team) {
-                                        const updatedP = { ...draggedProject, scheduled_date: null };
-                                        setProjects(projects.map(p => p.id === draggedProject.id ? updatedP : p));
-                                        saveProjectToFirebase(updatedP);
-                                        setDraggedProject(null);
-                                    }
-                                }}
+                                onDragOver={e => e.preventDefault()}
+                                onDrop={() => handleDropToUnscheduled(team)}
                             >
-                                <div style={{fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: 'var(--text-muted)'}}>📋 未排期项目（可拖回此处）</div>
+                                <div style={{fontSize:'1rem', fontWeight:'600', marginBottom:'1rem', color:'var(--text-muted)'}}>📋 未排期项目（可拖入日历，可多次拖入创建多段）</div>
                                 <div className="unscheduled-grid">
                                     {getUnscheduledProjects(team).map(p => (
-                                        <div 
-                                            key={p.id}
-                                            className={`schedule-project ${p.is_polaron ? 'polaron' : ''} ${p.status === '可开工' ? 'ready' : ''} ${draggedProject?.id === p.id ? 'dragging' : ''}`}
+                                        <div key={p.id}
+                                            className={`schedule-project ${p.is_polaron?'polaron':''} ${p.status==='可开工'?'ready':''} ${draggedProject?.id===p.id?'dragging':''}`}
                                             draggable
                                             onDragStart={() => setDraggedProject(p)}
                                             onDragEnd={() => { setDraggedProject(null); setHoveredDate(null); }}
                                         >
-                                            <strong>#{p.id}</strong> {p.address.substring(0, 25)}...
-                                            <div className="project-mini-info">{p.status} • {p.duration}天</div>
+                                            <strong>#{p.id}</strong> {p.address.substring(0,22)}…
+                                            <div className="project-mini-info">{p.status} • {p.duration}天 {p.workers?'• '+p.workers+'人':''}</div>
+                                        </div>
+                                    ))}
+                                    {/* Already-scheduled projects can also be re-dragged from here */}
+                                    {projects.filter(p => p.team===team && p.scheduled_dates && p.scheduled_dates.length>0).map(p => (
+                                        <div key={`copy-${p.id}`}
+                                            className={`schedule-project ${p.is_polaron?'polaron':''} ${p.status==='可开工'?'ready':''}`}
+                                            draggable
+                                            onDragStart={() => setDraggedProject(p)}
+                                            onDragEnd={() => { setDraggedProject(null); setHoveredDate(null); }}
+                                            style={{opacity:0.6, borderStyle:'dashed'}}
+                                            title="拖到新日期添加一段排期"
+                                        >
+                                            ＋ <strong>#{p.id}</strong> {p.address.substring(0,18)}…
+                                            <div className="project-mini-info">再加一段 • {p.duration}天</div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         </div>
-                    )})}
+                    );})}
                 </div>
             );
         }
