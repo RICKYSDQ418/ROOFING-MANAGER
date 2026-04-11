@@ -10,6 +10,29 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+      import { getFirestore, collection, getDocs, setDoc, doc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+      const firebaseConfig = {
+        apiKey: "AIzaSyBm4YjTUCqkmA6zKm3jSzFWwVhnE4pBt9k",
+        authDomain: "nsroofing-managent.firebaseapp.com",
+        projectId: "nsroofing-managent",
+        storageBucket: "nsroofing-managent.firebasestorage.app",
+        messagingSenderId: "418865973280",
+        appId: "1:418865973280:web:658a45e6d5ba177a979445"
+      };
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      window.firestoreDB = db;
+      window.firestoreCollection = collection;
+      window.firestoreGetDocs = getDocs;
+      window.firestoreSetDoc = setDoc;
+      window.firestoreDoc = doc;
+      window.firestoreOnSnapshot = onSnapshot;
+      window.firestoreDeleteDoc = deleteDoc;
+      window.firebaseReady = true;
+      window.dispatchEvent(new Event('firebaseReady'));
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -433,22 +456,60 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
                 if (el) { el.textContent = msg; el.style.display = 'block'; el.style.opacity = '1'; setTimeout(() => { el.style.opacity = '0'; setTimeout(() => { el.style.display = 'none'; }, 300); }, 2000); }
             };
 
-            useEffect(() => {
-                const savedVersion = localStorage.getItem(DATA_VERSION_KEY);
-                if (savedVersion !== CURRENT_DATA_VERSION) {
-                    // 新版本数据，清除旧缓存，强制加载最新项目列表
-                    localStorage.removeItem(STORAGE_KEY);
-                    localStorage.setItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
-                    setProjects(INITIAL_PROJECTS);
-                } else {
-                    const saved = loadFromLocalStorage();
-                    setProjects(saved && saved.length > 0 ? saved : INITIAL_PROJECTS);
-                }
-            }, []);
+            // Firebase helper functions
+            const saveProjectToFirebase = async (project) => {
+                if (!window.firestoreDB) return;
+                try {
+                    await window.firestoreSetDoc(window.firestoreDoc(window.firestoreDB, 'projects', String(project.id)), project);
+                } catch(e) { console.error('Firebase save error:', e); }
+            };
+            const deleteProjectFromFirebase = async (projectId) => {
+                if (!window.firestoreDB) return;
+                try {
+                    await window.firestoreDeleteDoc(window.firestoreDoc(window.firestoreDB, 'projects', String(projectId)));
+                } catch(e) { console.error('Firebase delete error:', e); }
+            };
+            const loadAllProjectsFromFirebase = async () => {
+                if (!window.firestoreDB) return null;
+                try {
+                    const snapshot = await window.firestoreGetDocs(window.firestoreCollection(window.firestoreDB, 'projects'));
+                    if (snapshot.empty) return null;
+                    return snapshot.docs.map(d => d.data());
+                } catch(e) { return null; }
+            };
 
             useEffect(() => {
-                if (projects.length > 0) saveToLocalStorage(projects);
-            }, [projects]);
+                const initData = async () => {
+                    try {
+                        if (!window.firestoreDB) {
+                            await new Promise(resolve => window.addEventListener('firebaseReady', resolve, { once: true }));
+                        }
+                        const db = window.firestoreDB;
+                        // Check version
+                        const savedVersion = localStorage.getItem(DATA_VERSION_KEY);
+                        if (savedVersion !== CURRENT_DATA_VERSION) {
+                            localStorage.setItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
+                            // seed Firebase with initial projects if empty
+                            for (const p of INITIAL_PROJECTS) {
+                                await window.firestoreSetDoc(window.firestoreDoc(db, 'projects', String(p.id)), p);
+                            }
+                        }
+                        // Set up real-time listener
+                        window.firestoreOnSnapshot(window.firestoreCollection(db, 'projects'), (snapshot) => {
+                            if (!snapshot.empty) {
+                                const updated = snapshot.docs.map(d => d.data());
+                                updated.sort((a, b) => a.id - b.id);
+                                setProjects(updated);
+                            }
+                        });
+                    } catch(e) {
+                        console.error('Firebase init error:', e);
+                        const saved = loadFromLocalStorage();
+                        setProjects(saved && saved.length > 0 ? saved : INITIAL_PROJECTS);
+                    }
+                };
+                initData();
+            }, []);
 
             const addProject = (newProject) => {
                 const maxId = projects.length > 0 ? Math.max(...projects.map(p => p.id)) : 0;
@@ -460,6 +521,7 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
                     scheduled_date: null
                 };
                 setProjects([...projects, project]);
+                saveProjectToFirebase(project);
                 setShowAddModal(false);
             };
 
