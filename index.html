@@ -590,7 +590,7 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
                                 onExport={() => exportToExcel(projects)}
                             />
                         )}
-                        {activeTab === 'calendar' && <CalendarView projects={projects} setProjects={setProjects} teams={teams} />}
+                        {activeTab === 'calendar' && <CalendarView projects={projects} setProjects={setProjects} teams={teams} saveToFirebase={saveProjectToFirebase} />}
                         {activeTab === 'map' && <MapView projects={projects} />}
                         {activeTab === 'crew' && <CrewView teams={teams} updateTeams={updateTeams} projects={projects} setProjects={setProjects} />}
                         {activeTab === 'quote' && <QuoteView teams={teams} projects={projects} setProjects={setProjects} addProject={addProject} />}
@@ -853,7 +853,7 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
             );
         }
 
-        function CalendarView({ projects, setProjects, teams }) {
+        function CalendarView({ projects, setProjects, teams, saveToFirebase }) {
             const [draggedProject, setDraggedProject] = useState(null);
             const [hoveredDate, setHoveredDate] = useState(null);
             const [resizing, setResizing] = useState(null); // {projectId, segIdx, startX, origDays}
@@ -900,7 +900,7 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
                 segs.push({ start: dateString, days: draggedProject.duration || 1 });
                 const updatedP = { ...draggedProject, scheduled_dates: segs, scheduled_date: dateString };
                 setProjects(projects.map(p => p.id === draggedProject.id ? updatedP : p));
-                saveProjectToFirebase(updatedP);
+                if(saveToFirebase) saveToFirebase(updatedP);
                 setDraggedProject(null); setHoveredDate(null);
             };
 
@@ -910,7 +910,7 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
                 const segs = (p.scheduled_dates || []).filter((_, i) => i !== segIdx);
                 const updatedP = { ...p, scheduled_dates: segs, scheduled_date: segs.length > 0 ? segs[0].start : null };
                 setProjects(projects.map(x => x.id === projectId ? updatedP : x));
-                saveProjectToFirebase(updatedP);
+                if(saveToFirebase) saveToFirebase(updatedP);
             };
 
             const extendSeg = (projectId, segIdx, extraDays) => {
@@ -919,14 +919,14 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
                 const segs = p.scheduled_dates.map((s, i) => i === segIdx ? { ...s, days: Math.max(1, (s.days || p.duration || 1) + extraDays) } : s);
                 const updatedP = { ...p, scheduled_dates: segs };
                 setProjects(projects.map(x => x.id === projectId ? updatedP : x));
-                saveProjectToFirebase(updatedP);
+                if(saveToFirebase) saveToFirebase(updatedP);
             };
 
             const handleDropToUnscheduled = (team) => {
                 if (!draggedProject || draggedProject.team !== team) return;
                 const updatedP = { ...draggedProject, scheduled_dates: [], scheduled_date: null };
                 setProjects(projects.map(p => p.id === draggedProject.id ? updatedP : p));
-                saveProjectToFirebase(updatedP);
+                if(saveToFirebase) saveToFirebase(updatedP);
                 setDraggedProject(null);
             };
 
