@@ -485,16 +485,16 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3}
                             await new Promise(resolve => window.addEventListener('firebaseReady', resolve, { once: true }));
                         }
                         const db = window.firestoreDB;
-                        // Check version
-                        const savedVersion = localStorage.getItem(DATA_VERSION_KEY);
-                        if (savedVersion !== CURRENT_DATA_VERSION) {
-                            localStorage.setItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
-                            // seed Firebase with initial projects if empty
+                        // 先检查 Firebase 里有没有数据
+                        const existingSnap = await window.firestoreGetDocs(window.firestoreCollection(db, 'projects'));
+                        if (existingSnap.empty) {
+                            // Firebase 是空的，才写入初始数据
                             for (const p of INITIAL_PROJECTS) {
                                 await window.firestoreSetDoc(window.firestoreDoc(db, 'projects', String(p.id)), p);
                             }
                         }
-                        // Set up real-time listener
+                        localStorage.setItem(DATA_VERSION_KEY, CURRENT_DATA_VERSION);
+                        // 设置实时监听
                         window.firestoreOnSnapshot(window.firestoreCollection(db, 'projects'), (snapshot) => {
                             if (!snapshot.empty) {
                                 const updated = snapshot.docs.map(d => d.data());
@@ -1790,14 +1790,17 @@ document.addEventListener('paste',e=>{
 function downloadApproval(){
   const d=getD(),r=calcR(d);
   const gafA_at=r.gafA_at, smooth_at=r.smooth_at;
-  const W=900,H=310,canvas=document.createElement('canvas');
+  const W=1000,H=360,canvas=document.createElement('canvas');
   canvas.width=W;canvas.height=H;
   const ctx=canvas.getContext('2d');
-  // panels
-  const t3=W/3, midW=120, sideW=(W-midW)/2;
+  const midW=160, sideW=(W-midW)/2;
+
+  // 两侧黑色背景
   ctx.fillStyle='#080808';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#040404';ctx.fillRect(sideW,0,midW,H);
-  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1;
+  // 中间白色背景
+  ctx.fillStyle='#ffffff';ctx.fillRect(sideW,0,midW,H);
+  // 红色左右边框线
+  ctx.strokeStyle='#cc0000';ctx.lineWidth=3;
   ctx.beginPath();ctx.moveTo(sideW,0);ctx.lineTo(sideW,H);ctx.stroke();
   ctx.beginPath();ctx.moveTo(sideW+midW,0);ctx.lineTo(sideW+midW,H);ctx.stroke();
 
@@ -1812,27 +1815,49 @@ function downloadApproval(){
   }):Promise.resolve();
 
   Promise.all([drawI(_leftImg,0,sideW),drawI(_rightImg,sideW+midW,sideW)]).then(()=>{
-    const mx=sideW+7;
+    const mx=sideW+10;
+    // 顶部标题
+    ctx.font='bold 11px "Arial",sans-serif';
+    ctx.fillStyle='#cc0000';ctx.textAlign='center';
+    ctx.letterSpacing='2px';
+    ctx.fillText('报价摘要', sideW+midW/2, 20);
+    ctx.letterSpacing='0px';
+    // 分隔线
+    ctx.strokeStyle='#ffcccc';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(sideW+8,26);ctx.lineTo(sideW+midW-8,26);ctx.stroke();
+
     const rows=[
-      ['AT GAF A',fmt(gafA_at),'#4d9eff'],
-      ['AT Smooth',fmt(smooth_at),'#ff9d3d'],
-      ['面积 sq',fN(r.wa),'#f0f0ee'],
-      ['进单',d.source||'—','#f0f0ee'],
-      ['距离 km',String(d.dist),'#f0f0ee'],
-      ['Comm.',d.comm+'%','#f0f0ee'],
+      ['AT GAF A', fmt(gafA_at)],
+      ['AT Smooth', fmt(smooth_at)],
+      ['面积 sq', fN(r.wa)],
+      ['进单', d.source||'—'],
+      ['距离 km', String(d.dist)],
+      ['Comm.', d.comm+'%'],
     ];
-    let y=28;
-    rows.forEach(([lbl,val,col])=>{
-      ctx.font='9px "DM Mono",monospace';ctx.fillStyle='#555';ctx.textAlign='left';
-      ctx.fillText(lbl,mx,y);
-      ctx.font='bold 12px "DM Mono",monospace';ctx.fillStyle=col;
-      ctx.fillText(val,mx,y+14);
-      ctx.strokeStyle='#111';ctx.lineWidth=0.5;
-      ctx.beginPath();ctx.moveTo(sideW+4,y+22);ctx.lineTo(sideW+midW-4,y+22);ctx.stroke();
-      y+=38;
+    let y=44;
+    rows.forEach(([lbl,val])=>{
+      // label
+      ctx.font='11px "Arial",sans-serif';
+      ctx.fillStyle='#cc0000';ctx.textAlign='left';
+      ctx.fillText(lbl, mx, y);
+      // value - 大字
+      ctx.font='bold 15px "Arial",sans-serif';
+      ctx.fillStyle='#990000';
+      ctx.fillText(val, mx, y+18);
+      // 分隔线
+      ctx.strokeStyle='#ffcccc';ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.moveTo(sideW+6,y+26);ctx.lineTo(sideW+midW-6,y+26);ctx.stroke();
+      y+=48;
     });
-    if(!_leftImg){ctx.font='11px sans-serif';ctx.fillStyle='#333';ctx.textAlign='center';ctx.fillText('俯视图',sideW/2,H/2);}
-    if(!_rightImg){ctx.font='11px sans-serif';ctx.fillStyle='#333';ctx.textAlign='center';ctx.fillText('街景',sideW+midW+sideW/2,H/2);}
+
+    if(!_leftImg){
+      ctx.font='bold 14px sans-serif';ctx.fillStyle='#666';
+      ctx.textAlign='center';ctx.fillText('俯视图',sideW/2,H/2);
+    }
+    if(!_rightImg){
+      ctx.font='bold 14px sans-serif';ctx.fillStyle='#666';
+      ctx.textAlign='center';ctx.fillText('街景',sideW+midW+sideW/2,H/2);
+    }
     const a=document.createElement('a');
     a.href=canvas.toDataURL('image/png');
     a.download='approval_'+(d.addr||Date.now())+'.png';
