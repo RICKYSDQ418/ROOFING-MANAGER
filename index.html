@@ -1823,7 +1823,7 @@ function downloadApproval(){
     const rEdge=sideW+midW-22;
 
     // 顶部标题
-    ctx.font='bold 22px Arial,sans-serif';
+    ctx.font='bold 25px Arial,sans-serif';
     ctx.fillStyle='#cc0000'; ctx.textAlign='center';
     ctx.fillText('NS ROOFER  报价摘要', cx, 46);
     // 标题下划线
@@ -1846,11 +1846,11 @@ function downloadApproval(){
 
     rows.forEach(([lbl,val],i)=>{
       // label
-      ctx.font='20px Arial,sans-serif';
+      ctx.font='23px Arial,sans-serif';
       ctx.fillStyle='#cc0000'; ctx.textAlign='left';
       ctx.fillText(lbl, lx, y);
       // value
-      ctx.font='bold 32px Arial,sans-serif';
+      ctx.font='bold 37px Arial,sans-serif';
       ctx.fillStyle='#aa0000';
       ctx.fillText(val, lx, y+38);
       // 分隔线
@@ -1866,11 +1866,11 @@ function downloadApproval(){
 
     // 两侧占位文字
     if(!_leftImg){
-      ctx.font='bold 28px sans-serif'; ctx.fillStyle='#444';
+      ctx.font='bold 32px sans-serif'; ctx.fillStyle='#444';
       ctx.textAlign='center'; ctx.fillText('俯视图', sideW/2, H/2);
     }
     if(!_rightImg){
-      ctx.font='bold 28px sans-serif'; ctx.fillStyle='#444';
+      ctx.font='bold 32px sans-serif'; ctx.fillStyle='#444';
       ctx.textAlign='center'; ctx.fillText('街景', sideW+midW+sideW/2, H/2);
     }
 
