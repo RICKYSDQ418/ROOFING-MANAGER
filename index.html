@@ -1790,9 +1790,10 @@ document.addEventListener('paste',e=>{
 function downloadApproval(){
   const d=getD(),r=calcR(d);
   const gafA_at=r.gafA_at, smooth_at=r.smooth_at;
-  // 中间占40%，两边各30%
-  const W=1000, H=380;
-  const midW=250, sideW=(W-midW)/2;  // 两边各375px
+  // 1920x1080，中间18%，两边各41%
+  const W=1920, H=1080;
+  const midW=Math.round(W*0.18);   // 346px
+  const sideW=(W-midW)/2;          // 787px each side
   const canvas=document.createElement('canvas');
   canvas.width=W; canvas.height=H;
   const ctx=canvas.getContext('2d');
@@ -1801,8 +1802,8 @@ function downloadApproval(){
   ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,W,H);
   // 中间白色背景
   ctx.fillStyle='#ffffff'; ctx.fillRect(sideW,0,midW,H);
-  // 红色边框
-  ctx.strokeStyle='#cc0000'; ctx.lineWidth=4;
+  // 红色边框线
+  ctx.strokeStyle='#cc0000'; ctx.lineWidth=6;
   ctx.beginPath(); ctx.moveTo(sideW,0); ctx.lineTo(sideW,H); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(sideW+midW,0); ctx.lineTo(sideW+midW,H); ctx.stroke();
 
@@ -1817,44 +1818,47 @@ function downloadApproval(){
   }):Promise.resolve();
 
   Promise.all([drawI(_leftImg,0,sideW), drawI(_rightImg,sideW+midW,sideW)]).then(()=>{
-    const cx=sideW+midW/2;  // 中间列中心x
-    const lx=sideW+16;      // 左对齐x
+    const cx=sideW+midW/2;
+    const lx=sideW+22;
+    const rEdge=sideW+midW-22;
 
     // 顶部标题
-    ctx.font='bold 13px Arial,sans-serif';
+    ctx.font='bold 22px Arial,sans-serif';
     ctx.fillStyle='#cc0000'; ctx.textAlign='center';
-    ctx.fillText('NS ROOFER  报价摘要', cx, 22);
-
+    ctx.fillText('NS ROOFER  报价摘要', cx, 46);
     // 标题下划线
-    ctx.strokeStyle='#cc0000'; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(sideW+12,30); ctx.lineTo(sideW+midW-12,30); ctx.stroke();
+    ctx.strokeStyle='#cc0000'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(sideW+16,58); ctx.lineTo(sideW+midW-16,58); ctx.stroke();
 
     const rows=[
-      ['AT GAF A',  fmt(gafA_at)],
-      ['AT Smooth', fmt(smooth_at)],
-      ['面积',      fN(r.wa)+' sq'],
-      ['进单',      d.source||'—'],
-      ['距离',      d.dist+' km'],
-      ['Commission',d.comm+'%'],
+      ['AT GAF A',   fmt(gafA_at)],
+      ['AT Smooth',  fmt(smooth_at)],
+      ['面积',       fN(r.wa)+' sq'],
+      ['进单',       d.source||'—'],
+      ['距离',       d.dist+' km'],
+      ['Commission', d.comm+'%'],
     ];
 
-    let y=50;
-    const rowH=52;
+    // 6行内容，总高度 H-80，每行均分
+    const contentH = H - 80;
+    const rowH = Math.floor(contentH / rows.length);
+    let y = 78;
+
     rows.forEach(([lbl,val],i)=>{
       // label
-      ctx.font='12px Arial,sans-serif';
+      ctx.font='20px Arial,sans-serif';
       ctx.fillStyle='#cc0000'; ctx.textAlign='left';
       ctx.fillText(lbl, lx, y);
-      // value - 大字醒目
-      ctx.font='bold 20px Arial,sans-serif';
+      // value
+      ctx.font='bold 32px Arial,sans-serif';
       ctx.fillStyle='#aa0000';
-      ctx.fillText(val, lx, y+24);
-      // 分隔线（最后一行不画）
+      ctx.fillText(val, lx, y+38);
+      // 分隔线
       if(i<rows.length-1){
-        ctx.strokeStyle='#ffcccc'; ctx.lineWidth=1;
+        ctx.strokeStyle='#ffcccc'; ctx.lineWidth=1.5;
         ctx.beginPath();
-        ctx.moveTo(sideW+10, y+34);
-        ctx.lineTo(sideW+midW-10, y+34);
+        ctx.moveTo(sideW+12, y+rowH-6);
+        ctx.lineTo(sideW+midW-12, y+rowH-6);
         ctx.stroke();
       }
       y+=rowH;
@@ -1862,11 +1866,11 @@ function downloadApproval(){
 
     // 两侧占位文字
     if(!_leftImg){
-      ctx.font='bold 16px sans-serif'; ctx.fillStyle='#444';
+      ctx.font='bold 28px sans-serif'; ctx.fillStyle='#444';
       ctx.textAlign='center'; ctx.fillText('俯视图', sideW/2, H/2);
     }
     if(!_rightImg){
-      ctx.font='bold 16px sans-serif'; ctx.fillStyle='#444';
+      ctx.font='bold 28px sans-serif'; ctx.fillStyle='#444';
       ctx.textAlign='center'; ctx.fillText('街景', sideW+midW+sideW/2, H/2);
     }
 
