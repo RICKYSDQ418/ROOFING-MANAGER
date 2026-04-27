@@ -1866,13 +1866,14 @@ function downloadApproval(){
     const rows=[
       ['AT GAF A',   fmt(gafA_at)],
       ['AT Smooth',  fmt(smooth_at)],
+      ['AT Stone',   fmt(r.stone_at)],
       ['面积',       fN(r.wa)+' sq'],
       ['进单',       d.source||'—'],
       ['距离',       d.dist+' km'],
       ['Commission', d.comm+'%'],
     ];
 
-    // 6行内容，总高度 H-80，每行均分
+    // 7行内容，总高度 H-80，每行均分
     const contentH = H - 80;
     const rowH = Math.floor(contentH / rows.length);
     let y = 78;
