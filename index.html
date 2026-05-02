@@ -1566,12 +1566,18 @@ function quoteSaveProject(){
   const d=getD(), r=calcR(d);
   const proj={id:Date.now(),date:new Date().toLocaleDateString('zh-CN'),...d,results:r,overrideGafAat:null,overrideSmoothAt:null};
   const arr=load(); arr.unshift(proj); persist(arr);
-  toast('✓ 项目已保存！'); renderProjects();
+  toast('✓ 项目已保存！');
+  quoteShowView('projects');
+  window.quoteRenderProjects();
+  badge(arr.length);
 }
 
 function deleteProject(id,e){
   e.stopPropagation(); if(!confirm('确认删除？'))return;
-  persist(load().filter(p=>p.id!==id)); renderProjects();
+  const arr=load().filter(p=>p.id!==id);
+  persist(arr);
+  window.quoteRenderProjects();
+  badge(arr.length);
 }
 
 // ── projects list ──
