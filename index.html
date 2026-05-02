@@ -1585,11 +1585,21 @@ function quoteSaveProject(){
 }
 
 function deleteProject(id,e){
-  e.stopPropagation(); if(!confirm('确认删除？'))return;
+  e.stopPropagation();
+  if(!confirm('确认删除？'))return;
+  // Immediately remove card from DOM
+  const card = e.target.closest('.pcard');
+  if(card) card.remove();
+  // Then persist and sync
   const arr=load().filter(p=>p.id!==id);
   localStorage.setItem(KEY,JSON.stringify(arr));
   badge(arr.length);
+  // Full re-render to fix numbering
   renderProjects();
+  // Sync Firebase deletion
+  if(window.firestoreDB){
+    window.firestoreDeleteDoc(window.firestoreDoc(window.firestoreDB,'quotes',String(id))).catch(()=>{});
+  }
 }
 
 // ── projects list ──
