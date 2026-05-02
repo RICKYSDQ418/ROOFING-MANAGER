@@ -1565,19 +1565,31 @@ function badge(n){$('cnt').textContent=n?'('+n+')'  :'';}
 function quoteSaveProject(){
   const d=getD(), r=calcR(d);
   const proj={id:Date.now(),date:new Date().toLocaleDateString('zh-CN'),...d,results:r,overrideGafAat:null,overrideSmoothAt:null};
-  const arr=load(); arr.unshift(proj); persist(arr);
-  toast('✓ 项目已保存！');
-  quoteShowView('projects');
-  window.quoteRenderProjects();
+  const arr=load(); arr.unshift(proj);
+  localStorage.setItem(KEY,JSON.stringify(arr));
   badge(arr.length);
+  // sync Firebase
+  if(window.firestoreDB){
+    arr.forEach(p=>{
+      window.firestoreSetDoc(window.firestoreDoc(window.firestoreDB,'quotes',String(p.id)),p).catch(e=>console.error('quote sync err',e));
+    });
+  }
+  // switch to projects tab and render immediately
+  $('viewCalc').style.display='none';
+  $('viewProj').classList.add('on');
+  $('btnCalc').classList.remove('on');
+  $('btnProj').classList.add('on');
+  renderProjects();
+  badge(arr.length);
+  toast('✓ 项目已保存！');
 }
 
 function deleteProject(id,e){
   e.stopPropagation(); if(!confirm('确认删除？'))return;
   const arr=load().filter(p=>p.id!==id);
-  persist(arr);
-  window.quoteRenderProjects();
+  localStorage.setItem(KEY,JSON.stringify(arr));
   badge(arr.length);
+  renderProjects();
 }
 
 // ── projects list ──
